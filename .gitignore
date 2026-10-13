@@ -1,0 +1,27 @@
+# ── Go ───────────────────────────────────────────────
+# Compiled binaries
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+*.test
+*.out
+coverage.out
+coverage.html
+
+# ── Environment ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Uploads / storage ────────────────────────────────
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# ── Vendor (uncomment if not vendoring) ──────────────
+# vendor/
