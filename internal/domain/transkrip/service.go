@@ -6,9 +6,11 @@ package transkrip
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
+	"strings"
 	"text/template"
 	"time"
 
@@ -19,15 +21,18 @@ import (
 	"github.com/simpeg/backend/internal/model/penilaian"
 	modelpenilaian "github.com/simpeg/backend/internal/model/penilaian"
 	"github.com/simpeg/backend/pkg/apperror"
+	"github.com/simpeg/backend/pkg/storage"
 )
 
+const transkripPrefix = "transkrip/"
+
 type Service struct {
-	db          *gorm.DB
-	storagePath string // dir untuk menyimpan file transkrip
+	db      *gorm.DB
+	storage *storage.Storage
 }
 
-func NewService(db *gorm.DB, storagePath string) *Service {
-	return &Service{db: db, storagePath: storagePath}
+func NewService(db *gorm.DB, store *storage.Storage) *Service {
+	return &Service{db: db, storage: store}
 }
 
 type TranskripData struct {
@@ -48,8 +53,8 @@ type NilaiRow struct {
 	Nilai          float64
 }
 
-// Generate membuat file transkrip untuk santri dan mengembalikan path file.
-func (s *Service) Generate(santriID uuid.UUID) (string, error) {
+// Generate membuat file transkrip untuk santri dan mengembalikan object key-nya.
+func (s *Service) Generate(ctx context.Context, santriID uuid.UUID) (string, error) {
 	// Load santri
 	var santri akademik.Santri
 	if err := s.db.Preload("User").First(&santri, "id = ?", santriID).Error; err != nil {
@@ -104,15 +109,9 @@ func (s *Service) Generate(santriID uuid.UUID) (string, error) {
 		return "", apperror.ErrInternal
 	}
 
-	// Simpan file
-	if err := os.MkdirAll(s.storagePath, 0755); err != nil {
-		return "", apperror.ErrInternal
-	}
-
-	fileName := fmt.Sprintf("transkrip_%s_%d.txt", santriID.String(), time.Now().Unix())
-	filePath := filepath.Join(s.storagePath, fileName)
-
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	// Simpan file ke MinIO
+	key := fmt.Sprintf("%stranskrip_%s_%d.txt", transkripPrefix, santriID.String(), time.Now().Unix())
+	if err := s.storage.Put(ctx, key, strings.NewReader(content), int64(len(content)), "text/plain; charset=utf-8"); err != nil {
 		return "", apperror.ErrInternal
 	}
 
@@ -121,12 +120,27 @@ func (s *Service) Generate(santriID uuid.UUID) (string, error) {
 		SantriID:      santriID,
 		Semester:      1,
 		TahunAjaranID: ta.ID,
-		FilePath:      filePath,
+		FilePath:      key,
 		GeneratedAt:   time.Now(),
 	}
 	s.db.Create(&rapor)
 
-	return filePath, nil
+	return key, nil
+}
+
+// OpenFile membuka file transkrip dari MinIO. Caller wajib menutup reader.
+func (s *Service) OpenFile(ctx context.Context, rapor *modelpenilaian.Rapor) (io.ReadCloser, int64, error) {
+	// Record lama menyimpan path lokal "storage/transkrip/..."
+	key := strings.TrimPrefix(rapor.FilePath, "storage/")
+
+	obj, info, err := s.storage.Get(ctx, key)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, 0, apperror.ErrNotFoundMsg("file transkrip")
+		}
+		return nil, 0, apperror.ErrInternal
+	}
+	return obj, info.Size, nil
 }
 
 // GetRaporByID mengembalikan rapor/transkrip berdasarkan ID.

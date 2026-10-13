@@ -2,6 +2,8 @@
 package app
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 
 	"github.com/simpeg/backend/internal/config"
@@ -10,6 +12,7 @@ import (
 	"github.com/simpeg/backend/pkg/cache"
 	"github.com/simpeg/backend/pkg/database"
 	"github.com/simpeg/backend/pkg/logger"
+	"github.com/simpeg/backend/pkg/storage"
 )
 
 func Run() {
@@ -33,11 +36,17 @@ func Run() {
 
 	redisClient := cache.NewRedis(cfg)
 
+	store, err := storage.NewMinio(context.Background(), cfg)
+	if err != nil {
+		zapLogger.Fatal("gagal koneksi minio", zap.Error(err))
+	}
+
 	r := server.NewRouter(server.Deps{
-		Config: cfg,
-		Logger: zapLogger,
-		DB:     db,
-		Redis:  redisClient,
+		Config:  cfg,
+		Logger:  zapLogger,
+		DB:      db,
+		Redis:   redisClient,
+		Storage: store,
 	})
 
 	zapLogger.Info("server berjalan", zap.String("addr", cfg.ServerAddress))

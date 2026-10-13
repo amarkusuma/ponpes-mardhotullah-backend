@@ -2,8 +2,7 @@ package konten
 
 import (
 	"fmt"
-	"io"
-	"os"
+	"mime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,14 +14,16 @@ import (
 	mw "github.com/simpeg/backend/pkg/middleware"
 	"github.com/simpeg/backend/pkg/pagination"
 	"github.com/simpeg/backend/pkg/response"
+	"github.com/simpeg/backend/pkg/storage"
 )
 
 type Handler struct {
-	svc *Service
+	svc     *Service
+	storage *storage.Storage
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, store *storage.Storage) *Handler {
+	return &Handler{svc: svc, storage: store}
 }
 
 // ── Artikel ───────────────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ func (h *Handler) DeleteBanner(c *gin.Context) {
 
 // ── Galeri ────────────────────────────────────────────────────────────────────
 
-const galeriStoragePath = "./storage/galeri"
+const galeriPrefix = "galeri/"
 const maxFileSize = 5 << 20 // 5 MB
 
 // POST /api/admin/galeri/upload
@@ -209,20 +210,10 @@ func (h *Handler) UploadGambarGaleri(c *gin.Context) {
 		return
 	}
 
-	if err := os.MkdirAll(galeriStoragePath, 0755); err != nil {
-		response.Error(c, apperror.ErrInternal)
-		return
-	}
-
 	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixMilli(), uuid.New().String()[:8], ext)
-	dst, err := os.Create(filepath.Join(galeriStoragePath, filename))
-	if err != nil {
-		response.Error(c, apperror.ErrInternal)
-		return
-	}
-	defer dst.Close()
+	contentType := mime.TypeByExtension(ext)
 
-	if _, err := io.Copy(dst, file); err != nil {
+	if err := h.storage.Put(c.Request.Context(), galeriPrefix+filename, file, header.Size, contentType); err != nil {
 		response.Error(c, apperror.ErrInternal)
 		return
 	}

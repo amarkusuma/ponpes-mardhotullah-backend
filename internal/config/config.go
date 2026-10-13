@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -17,6 +18,12 @@ type Config struct {
 	AllowedOrigins  string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioBucket    string
+	MinioUseSSL    bool
 }
 
 func LoadConfig() *Config {
@@ -32,6 +39,12 @@ func LoadConfig() *Config {
 		AllowedOrigins:  getEnv("ALLOWED_ORIGINS", "http://localhost:3000"),
 		AccessTokenTTL:  getDurationEnv("ACCESS_TOKEN_TTL", 6*time.Hour),
 		RefreshTokenTTL: getDurationEnv("REFRESH_TOKEN_TTL", 7*24*time.Hour),
+
+		MinioEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinioBucket:    getEnv("MINIO_BUCKET", "ponpes"),
+		MinioUseSSL:    getBoolEnv("MINIO_USE_SSL", false),
 	}
 }
 
@@ -46,6 +59,15 @@ func getDurationEnv(key string, fallback time.Duration) time.Duration {
 	if value, exists := os.LookupEnv(key); exists {
 		if d, err := time.ParseDuration(value); err == nil {
 			return d
+		}
+	}
+	return fallback
+}
+
+func getBoolEnv(key string, fallback bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		if b, err := strconv.ParseBool(value); err == nil {
+			return b
 		}
 	}
 	return fallback

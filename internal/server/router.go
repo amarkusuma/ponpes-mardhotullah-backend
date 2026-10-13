@@ -16,6 +16,7 @@ import (
 	transkripDomain "github.com/simpeg/backend/internal/domain/transkrip"
 	userDomain "github.com/simpeg/backend/internal/domain/user"
 	mw "github.com/simpeg/backend/pkg/middleware"
+	"github.com/simpeg/backend/pkg/storage"
 )
 
 // Deps adalah kumpulan dependency yang dibutuhkan router.
@@ -24,6 +25,7 @@ type Deps struct {
 	Logger   *zap.Logger
 	DB       *gorm.DB
 	Redis    *redis.Client
+	Storage  *storage.Storage
 }
 
 // NewRouter membangun gin.Engine dengan semua route terdaftar.
@@ -57,10 +59,10 @@ func NewRouter(deps Deps) *gin.Engine {
 	// Konten
 	kontenRepo    := kontenDomain.NewRepository(deps.DB)
 	kontenSvc     := kontenDomain.NewService(kontenRepo)
-	kontenHandler := kontenDomain.NewHandler(kontenSvc)
+	kontenHandler := kontenDomain.NewHandler(kontenSvc, deps.Storage)
 
 	// Transkrip
-	transkripSvc     := transkripDomain.NewService(deps.DB, "./storage/transkrip")
+	transkripSvc     := transkripDomain.NewService(deps.DB, deps.Storage)
 	transkripHandler := transkripDomain.NewHandler(transkripSvc)
 
 	// ── Middleware ─────────────────────────────────────────────────────────
@@ -121,8 +123,8 @@ func NewRouter(deps Deps) *gin.Engine {
 	)
 	transkripHandler.RegisterRoutes(transkrip)
 
-	// Static files (uploaded images)
-	r.Static("/uploads", "./storage")
+	// File upload (di-stream dari MinIO, contoh: /uploads/galeri/xxx.png)
+	r.GET("/uploads/*key", serveUpload(deps.Storage))
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {

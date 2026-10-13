@@ -2,7 +2,6 @@ package transkrip
 
 import (
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,7 +26,7 @@ func (h *Handler) Generate(c *gin.Context) {
 		return
 	}
 
-	filePath, err := h.svc.Generate(santriID)
+	filePath, err := h.svc.Generate(c.Request.Context(), santriID)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -52,18 +51,17 @@ func (h *Handler) Download(c *gin.Context) {
 		return
 	}
 
-	// Pastikan file ada
-	if _, statErr := os.Stat(rapor.FilePath); os.IsNotExist(statErr) {
-		response.Error(c, apperror.ErrNotFoundMsg("file transkrip"))
+	file, size, err := h.svc.OpenFile(c.Request.Context(), rapor)
+	if err != nil {
+		response.Error(c, err)
 		return
 	}
+	defer file.Close()
 
-	// Set header download
 	fileName := "transkrip_" + rapor.Santri.NIK + ".txt"
-	c.Header("Content-Disposition", "attachment; filename="+fileName)
-	c.Header("Content-Type", "text/plain; charset=utf-8")
-	c.Status(http.StatusOK)
-	c.File(rapor.FilePath)
+	c.DataFromReader(http.StatusOK, size, "text/plain; charset=utf-8", file, map[string]string{
+		"Content-Disposition": "attachment; filename=" + fileName,
+	})
 }
 
 // RegisterRoutes mendaftarkan route transkrip.
