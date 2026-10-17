@@ -59,7 +59,7 @@ func NewRouter(deps Deps) *gin.Engine {
 	// Konten
 	kontenRepo    := kontenDomain.NewRepository(deps.DB)
 	kontenSvc     := kontenDomain.NewService(kontenRepo)
-	kontenHandler := kontenDomain.NewHandler(kontenSvc, deps.Storage)
+	kontenHandler := kontenDomain.NewHandler(kontenSvc, deps.Storage, deps.Redis)
 
 	// Transkrip
 	transkripSvc     := transkripDomain.NewService(deps.DB, deps.Storage)

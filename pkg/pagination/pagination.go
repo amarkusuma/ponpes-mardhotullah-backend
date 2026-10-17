@@ -2,10 +2,14 @@
 package pagination
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// MaxLimit adalah batas maksimal item per halaman.
+const MaxLimit = 100
 
 // Params mengemas parameter paginasi, sorting, dan search dari query string.
 type Params struct {
@@ -18,14 +22,17 @@ type Params struct {
 
 // Parse membaca query params dari gin.Context dengan nilai default yang aman.
 func Parse(c *gin.Context) Params {
-	page := c.GetInt("page")
+	page, _ := strconv.Atoi(c.Query("page"))
 	if page < 1 {
 		page = 1
 	}
 
-	limit := c.GetInt("limit")
-	if limit < 1 || limit > 100 {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit < 1 {
 		limit = 10
+	}
+	if limit > MaxLimit {
+		limit = MaxLimit
 	}
 
 	sortBy := c.DefaultQuery("sort_by", "created_at")

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -8,15 +9,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/simpeg/backend/internal/config"
 	"github.com/simpeg/backend/internal/model"
 	"github.com/simpeg/backend/internal/model/akademik"
 	"github.com/simpeg/backend/internal/model/penilaian"
 )
 
-// Seed mengisi data awal untuk development.
-// Aman dijalankan berulang (idempotent via FirstOrCreate).
-func Seed(db *gorm.DB) error {
-	log.Println("▶ Seeding dimulai...")
+// Seed mengisi data awal. Aman dijalankan berulang (idempotent via FirstOrCreate).
+//
+//   - Semua environment : permission & role (dibutuhkan sistem RBAC).
+//   - production        : admin awal dari ADMIN_EMAIL/ADMIN_PASSWORD, hanya bila
+//     belum ada user ber-role admin. Tidak ada data dummy.
+//   - development       : seluruh data dummy (admin, guru, santri, wali, kelas, dst).
+func Seed(db *gorm.DB, cfg *config.Config) error {
+	log.Printf("▶ Seeding dimulai (APP_ENV=%s)...", cfg.AppEnv)
 
 	// ── 1. Permissions ────────────────────────────────────────────
 	permissions := []string{
@@ -44,8 +50,13 @@ func Seed(db *gorm.DB) error {
 	roleSantri := seedRole(db, "santri", permissionsFor(permMap,
 		"santri:read", "akademik:read",
 	))
-	_ = roleWali
-	_ = roleSantri
+	if cfg.IsProduction() {
+		if err := seedProductionAdmin(db, cfg, roleAdmin); err != nil {
+			return err
+		}
+		log.Println("✅ Seeding production selesai (tanpa data dummy).")
+		return nil
+	}
 
 	// ── 3. Tahun Ajaran ──────────────────────────────────────────
 	ta := akademik.TahunAjaran{}
@@ -195,6 +206,39 @@ func Seed(db *gorm.DB) error {
 // ─────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────
+
+// seedProductionAdmin membuat admin awal hanya jika belum ada user ber-role admin.
+// Tidak pernah mengubah password user yang sudah ada.
+func seedProductionAdmin(db *gorm.DB, cfg *config.Config, roleAdmin model.Role) error {
+	var adminCount int64
+	err := db.Table("user_roles").
+		Joins("JOIN users ON users.id = user_roles.user_id AND users.deleted_at IS NULL").
+		Where("user_roles.role_id = ?", roleAdmin.ID).
+		Count(&adminCount).Error
+	if err != nil {
+		return fmt.Errorf("cek admin: %w", err)
+	}
+	if adminCount > 0 {
+		return nil
+	}
+
+	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {
+		log.Println("⚠ Belum ada user admin. Set ADMIN_EMAIL & ADMIN_PASSWORD untuk membuat admin awal.")
+		return nil
+	}
+	if len(cfg.AdminPassword) < 8 {
+		return errors.New("ADMIN_PASSWORD minimal 8 karakter")
+	}
+
+	var existing model.User
+	if err := db.Where("email = ?", cfg.AdminEmail).First(&existing).Error; err == nil {
+		return fmt.Errorf("email %s sudah dipakai user lain; tidak dijadikan admin otomatis", cfg.AdminEmail)
+	}
+
+	seedUser(db, cfg.AdminName, cfg.AdminEmail, cfg.AdminPassword, roleAdmin)
+	log.Printf("✅ Admin awal dibuat: %s", cfg.AdminEmail)
+	return nil
+}
 
 func seedUser(db *gorm.DB, name, email, password string, role model.Role) model.User {
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

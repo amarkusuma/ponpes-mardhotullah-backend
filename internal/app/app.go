@@ -21,6 +21,8 @@ func Run() {
 	zapLogger := logger.New(cfg)
 	defer zapLogger.Sync() //nolint:errcheck
 
+	zapLogger.Info("environment", zap.String("app_env", cfg.AppEnv), zap.Bool("production", cfg.IsProduction()))
+
 	db, err := database.NewPostgres(cfg)
 	if err != nil {
 		zapLogger.Fatal("gagal koneksi database", zap.Error(err))
@@ -30,7 +32,7 @@ func Run() {
 		zapLogger.Fatal("migrasi database gagal", zap.Error(err))
 	}
 
-	if err := internaldb.Seed(db); err != nil {
+	if err := internaldb.Seed(db, cfg); err != nil {
 		zapLogger.Warn("seeding gagal", zap.Error(err))
 	}
 

@@ -44,8 +44,20 @@ func (s *Service) GetArtikel(id uuid.UUID) (*ArtikelResponse, error) {
 	return &r, nil
 }
 
-func (s *Service) GetArtikelBySlug(slug string) (*ArtikelResponse, error) {
-	a, err := s.repo.FindArtikelBySlug(slug)
+// ── Artikel publik (hanya status published) ──────────────────────────────────
+
+// ListArtikelPublik mengembalikan artikel published.
+// sort: "populer" (views terbanyak) atau selain itu terbaru.
+func (s *Service) ListArtikelPublik(params pagination.Params, kategori, sort string) ([]ArtikelResponse, int64, error) {
+	list, total, err := s.repo.ListArtikelPublik(params, kategori, sort == SortPopuler)
+	if err != nil {
+		return nil, 0, apperror.ErrInternal
+	}
+	return toArtikelResponses(list), total, nil
+}
+
+func (s *Service) GetArtikelPublikBySlug(slug string) (*ArtikelResponse, error) {
+	a, err := s.repo.FindArtikelPublikBySlug(slug)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, apperror.ErrNotFoundMsg("artikel")
@@ -54,6 +66,36 @@ func (s *Service) GetArtikelBySlug(slug string) (*ArtikelResponse, error) {
 	}
 	r := toArtikelResponse(*a)
 	return &r, nil
+}
+
+// ListArtikelTerkait: artikel published sekategori (terbaru dulu), dilengkapi
+// artikel terbaru lain bila jumlahnya kurang dari limit.
+func (s *Service) ListArtikelTerkait(slug string, limit int) ([]ArtikelResponse, error) {
+	a, err := s.repo.FindArtikelPublikBySlug(slug)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperror.ErrNotFoundMsg("artikel")
+		}
+		return nil, apperror.ErrInternal
+	}
+
+	list, err := s.repo.ListArtikelTerkait(a.ID, a.Kategori, limit)
+	if err != nil {
+		return nil, apperror.ErrInternal
+	}
+	return toArtikelResponses(list), nil
+}
+
+// TambahViewArtikel menaikkan jumlah views artikel published.
+func (s *Service) TambahViewArtikel(slug string) error {
+	ok, err := s.repo.IncrementArtikelViews(slug)
+	if err != nil {
+		return apperror.ErrInternal
+	}
+	if !ok {
+		return apperror.ErrNotFoundMsg("artikel")
+	}
+	return nil
 }
 
 func (s *Service) CreateArtikel(penulisID uuid.UUID, req CreateArtikelRequest) (*ArtikelResponse, error) {
@@ -102,8 +144,8 @@ func (s *Service) UpdateArtikel(id uuid.UUID, req UpdateArtikelRequest) (*Artike
 	if req.Kategori != "" {
 		a.Kategori = req.Kategori
 	}
-	if req.Thumbnail != "" {
-		a.Thumbnail = req.Thumbnail
+	if req.Thumbnail != nil {
+		a.Thumbnail = *req.Thumbnail
 	}
 	if req.Status != "" {
 		a.Status = req.Status
@@ -126,19 +168,25 @@ func (s *Service) DeleteArtikel(id uuid.UUID) error {
 
 // ── Banner ────────────────────────────────────────────────────────────────────
 
-func (s *Service) ListBanner(onlyActive bool) ([]modelkonten.Banner, error) {
-	return s.repo.ListBanner(onlyActive)
+func (s *Service) ListBanner(halaman string, onlyActive bool) ([]modelkonten.Banner, error) {
+	list, err := s.repo.ListBanner(halaman, onlyActive)
+	if err != nil {
+		return nil, apperror.ErrInternal
+	}
+	return list, nil
 }
 
 func (s *Service) CreateBanner(req CreateBannerRequest) (*modelkonten.Banner, error) {
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
 	b := &modelkonten.Banner{
-		Judul:          req.Judul,
-		GambarURL:      req.GambarURL,
-		Link:           req.Link,
-		Urutan:         req.Urutan,
-		IsActive:       req.IsActive,
-		TanggalMulai:   req.TanggalMulai,
-		TanggalSelesai: req.TanggalSelesai,
+		Judul:     req.Judul,
+		GambarURL: req.GambarURL,
+		Halaman:   req.Halaman,
+		Urutan:    req.Urutan,
+		IsActive:  isActive,
 	}
 	if err := s.repo.CreateBanner(b); err != nil {
 		return nil, apperror.ErrInternal
@@ -152,26 +200,20 @@ func (s *Service) UpdateBanner(id uuid.UUID, req UpdateBannerRequest) (*modelkon
 		return nil, apperror.ErrNotFoundMsg("banner")
 	}
 
-	if req.Judul != "" {
-		b.Judul = req.Judul
+	if req.Judul != nil {
+		b.Judul = *req.Judul
 	}
 	if req.GambarURL != "" {
 		b.GambarURL = req.GambarURL
 	}
-	if req.Link != "" {
-		b.Link = req.Link
+	if req.Halaman != "" {
+		b.Halaman = req.Halaman
 	}
-	if req.Urutan > 0 {
-		b.Urutan = req.Urutan
+	if req.Urutan != nil {
+		b.Urutan = *req.Urutan
 	}
 	if req.IsActive != nil {
 		b.IsActive = *req.IsActive
-	}
-	if !req.TanggalMulai.IsZero() {
-		b.TanggalMulai = req.TanggalMulai
-	}
-	if !req.TanggalSelesai.IsZero() {
-		b.TanggalSelesai = req.TanggalSelesai
 	}
 
 	if err := s.repo.UpdateBanner(b); err != nil {
@@ -283,8 +325,17 @@ func toArtikelResponse(a modelkonten.Artikel) ArtikelResponse {
 		Thumbnail: a.Thumbnail,
 		Status:    a.Status,
 		Penulis:   penulis,
+		Views:     a.Views,
 		CreatedAt: a.CreatedAt,
 	}
+}
+
+func toArtikelResponses(list []modelkonten.Artikel) []ArtikelResponse {
+	result := make([]ArtikelResponse, 0, len(list))
+	for _, a := range list {
+		result = append(result, toArtikelResponse(a))
+	}
+	return result
 }
 
 func toGaleriResponse(g modelkonten.Galeri) GaleriResponse {

@@ -49,6 +49,8 @@ func Migrate(db *gorm.DB) error {
 
 		// ── Konten ────────────────────────────────────────────────────
 		&konten.Artikel{},
+		&konten.News{},
+		&konten.DigitalLibrary{},
 		&konten.Banner{},
 		&konten.Galeri{},
 	); err != nil {

@@ -22,30 +22,27 @@ type UpdateArtikelRequest struct {
 	Judul     string                    `json:"judul"`
 	Konten    string                    `json:"konten"`
 	Kategori  string                    `json:"kategori"`
-	Thumbnail string                    `json:"thumbnail"`
+	Thumbnail *string                   `json:"thumbnail"` // nil = tidak diubah, "" = hapus thumbnail
 	Status    modelkonten.StatusArtikel `json:"status"    binding:"omitempty,oneof=draft published archived"`
 }
 
 // ── Banner ───────────────────────────────────────────────────────────────────
 
 type CreateBannerRequest struct {
-	Judul          string    `json:"judul"           binding:"required"`
-	GambarURL      string    `json:"gambar_url"      binding:"required,url"`
-	Link           string    `json:"link"`
-	Urutan         int       `json:"urutan"`
-	IsActive       bool      `json:"is_active"`
-	TanggalMulai   time.Time `json:"tanggal_mulai"   binding:"required"`
-	TanggalSelesai time.Time `json:"tanggal_selesai" binding:"required"`
+	Judul     string                    `json:"judul"      binding:"max=255"`
+	GambarURL string                    `json:"gambar_url" binding:"required,max=500"`
+	Halaman   modelkonten.HalamanBanner `json:"halaman"    binding:"required,oneof=home profile gallery faq pendaftaran berita artikel pusat-informasi"`
+	Urutan    int                       `json:"urutan"     binding:"min=0"`
+	IsActive  *bool                     `json:"is_active"`
 }
 
+// Field pointer: nil = tidak diubah (judul boleh dikosongkan, urutan boleh 0).
 type UpdateBannerRequest struct {
-	Judul          string    `json:"judul"`
-	GambarURL      string    `json:"gambar_url"`
-	Link           string    `json:"link"`
-	Urutan         int       `json:"urutan"`
-	IsActive       *bool     `json:"is_active"`
-	TanggalMulai   time.Time `json:"tanggal_mulai"`
-	TanggalSelesai time.Time `json:"tanggal_selesai"`
+	Judul     *string                   `json:"judul"      binding:"omitempty,max=255"`
+	GambarURL string                    `json:"gambar_url" binding:"max=500"`
+	Halaman   modelkonten.HalamanBanner `json:"halaman"    binding:"omitempty,oneof=home profile gallery faq pendaftaran berita artikel pusat-informasi"`
+	Urutan    *int                      `json:"urutan"     binding:"omitempty,min=0"`
+	IsActive  *bool                     `json:"is_active"`
 }
 
 type ArtikelResponse struct {
@@ -57,6 +54,7 @@ type ArtikelResponse struct {
 	Thumbnail string                      `json:"thumbnail,omitempty"`
 	Status    modelkonten.StatusArtikel   `json:"status"`
 	Penulis   string                      `json:"penulis"`
+	Views     int64                       `json:"views"`
 	CreatedAt time.Time                   `json:"created_at"`
 }
 
@@ -91,6 +89,7 @@ type GaleriResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-type UploadGambarResponse struct {
-	URL string `json:"url"`
+type UploadFileResponse struct {
+	URL  string `json:"url"`
+	Size int64  `json:"size"` // byte
 }
